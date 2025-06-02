@@ -1,1 +1,1 @@
-# Graphic_Processor_Unit_RTL
+# Graphic_Processing_Unit_RTL
