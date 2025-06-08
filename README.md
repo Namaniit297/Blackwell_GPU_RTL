@@ -56,6 +56,6 @@ We welcome contributions from RTL designers, GPU architects, AI hardware researc
 ## 📚 References
 
 - NVIDIA Blackwell Architecture Whitepapers  
-- CUDA ISA and Programming Model Documentation
+- CUDA PTX ISA and Programming Model Documentation
 - Research Literature on Systolic Arrays and AI Acceleration  
 - AXI Protocol Specifications
