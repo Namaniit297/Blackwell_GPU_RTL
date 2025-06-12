@@ -1,113 +1,239 @@
-//******************************************************************************  
-//******************************************************************************
-
+//****************************************************************************** 
 `timescale 1ns / 1ps
 
-(* keep_hierarchy = "yes" *)
-module ADD (
-    input  [65:0] INPUT_1,
-    input  [65:0] INPUT_2,
-    input  [2:0]  Rounding_Mode,
-    input         SP_DP,     // FLIPPED MEANING: 1 = SP, 0 = DP
-    input         ADD_SUB,
-    output reg [65:0] OUTPUT,
-    output reg        INVALID,
-    output reg        OVERFLOW,
-    output reg        UNDERFLOW,
-    output reg        INEXACT
+`define EQUAL           3'b000
+`define LESS_THAN       3'b001
+`define LESS_OR_EQUAL   3'b010
+`define MIN             3'b100
+`define MAX             3'b101
+
+`define QNaN_DP 64'h7FF8000000000000
+`define QNaN_SP 32'h7FC00000
+
+
+module COMPARE
+(
+    input [63:0] INPUT_1,
+    input [63:0] INPUT_2,
+    input SP_DP,
+    input [2:0] OPERATION,
+    output reg [63:0] OUTPUT,
+    output reg INVALID
 );
 
-wire [65:0] INPUT_1_DP;
-wire [65:0] INPUT_2_DP;
-wire [65:0] INPUT_2_DP_NEG;
-wire [65:0] OUTPUT_DP;
+wire [7:0] INPUT_1_exp_SP = INPUT_1[30:23];
+wire [7:0] INPUT_2_exp_SP = INPUT_2[30:23];	
+wire [10:0] INPUT_1_exp_DP = INPUT_1[62:52];
+wire [10:0] INPUT_2_exp_DP = INPUT_2[62:52];	
 
-wire [33:0] INPUT_1_SP;
-wire [33:0] INPUT_2_SP;
-wire [33:0] INPUT_2_SP_NEG;
-wire [33:0] OUTPUT_SP;
+wire [22:0] INPUT_1_man_SP = INPUT_1[22:0];
+wire [22:0] INPUT_2_man_SP = INPUT_2[22:0];
+wire [51:0] INPUT_1_man_DP = INPUT_1[51:0];
+wire [51:0] INPUT_2_man_DP = INPUT_2[51:0];
 
-wire INEXACT_SP;
-wire INEXACT_DP;
+wire INPUT_1_QNAN_SP = &INPUT_1_exp_SP & INPUT_1_man_SP[22];
+wire INPUT_2_QNAN_SP = &INPUT_2_exp_SP & INPUT_2_man_SP[22];
+wire INPUT_1_QNAN_DP = &INPUT_1_exp_DP & INPUT_1_man_DP[51];                      
+wire INPUT_2_QNAN_DP = &INPUT_2_exp_DP & INPUT_2_man_DP[51];
 
-// ----------- Assignments (SP_DP = 1 => SP, 0 => DP) -----------
+wire INPUT_1_SNAN_SP = &INPUT_1_exp_SP & !INPUT_1_man_SP[22] & (|INPUT_1_man_SP);
+wire INPUT_2_SNAN_SP = &INPUT_2_exp_SP & !INPUT_2_man_SP[22] & (|INPUT_2_man_SP);
+wire INPUT_1_SNAN_DP = &INPUT_1_exp_DP & !INPUT_1_man_DP[51] & (|INPUT_1_man_DP);                      
+wire INPUT_2_SNAN_DP = &INPUT_2_exp_DP & !INPUT_2_man_DP[51] & (|INPUT_2_man_DP);
 
-assign INPUT_1_SP     = SP_DP ? INPUT_1[33:0] : 34'b0;
-assign INPUT_2_SP     = SP_DP ? INPUT_2[33:0] : 34'b0;
-assign INPUT_2_SP_NEG = SP_DP ? {INPUT_2_SP[33:32], INPUT_2_SP[31] ^ 1'b1, INPUT_2_SP[30:0]} : 34'b0;
+wire EQ;
+wire LT;
+wire LE;
 
-assign INPUT_1_DP     = ~SP_DP ? INPUT_1 : 66'b0;
-assign INPUT_2_DP     = ~SP_DP ? INPUT_2 : 66'b0;
-assign INPUT_2_DP_NEG = ~SP_DP ? {INPUT_2[65:64], INPUT_2[63] ^ 1'b1, INPUT_2[62:0]} : 66'b0;
-
-// ----------- Floating Point Adders -----------
-
-(* keep_hierarchy = "yes" *) FPAdd_8_23_comb_uid2 FPADD_SP (
-    .X(INPUT_1_SP),
-    .Y(ADD_SUB ? INPUT_2_SP_NEG : INPUT_2_SP),
-    .RM(Rounding_Mode),
-    .R(OUTPUT_SP),
-    .INEXACT(INEXACT_SP)
-);
-
-(* keep_hierarchy = "yes" *) FPAdd_11_52_comb_uid2 FPADD_DP (
-    .X(INPUT_1_DP),
-    .Y(ADD_SUB ? INPUT_2_DP_NEG : INPUT_2_DP),
-    .RM(Rounding_Mode),
-    .R(OUTPUT_DP),
-    .INEXACT(INEXACT_DP)
-);
-
-// ----------- Output Muxing -----------
+Compare COMP( .INPUT_1(INPUT_1), .INPUT_2(INPUT_2), .SP_DP(SP_DP), .EQ(EQ), .LT(LT), .LE(LE));
 
 always @(*) begin
-    if (SP_DP) begin
-        OUTPUT <= {32'b0, OUTPUT_SP};
-    end else begin
-        OUTPUT <= OUTPUT_DP;
+    if(SP_DP == 1) begin
+        case(OPERATION)
+            `EQUAL : begin
+                if(INPUT_1_SNAN_DP | INPUT_2_SNAN_DP) begin
+                    INVALID <= 1'b1;
+                    OUTPUT <= {64{1'b0}};
+                end
+                else if(INPUT_1_QNAN_DP | INPUT_2_QNAN_DP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {64{1'b0}};               
+                end
+                else begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{63{1'b0}},EQ};
+                end
+            end
+            `LESS_THAN : begin
+                if(INPUT_1_SNAN_DP | INPUT_2_SNAN_DP | INPUT_1_QNAN_DP | INPUT_2_QNAN_DP) begin
+                    INVALID <= 1'b1;
+                    OUTPUT <= {64{1'b0}};
+                end
+                else begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{63{1'b0}},LT};
+                end
+            end
+            `LESS_OR_EQUAL : begin
+                if(INPUT_1_SNAN_DP | INPUT_2_SNAN_DP | INPUT_1_QNAN_DP | INPUT_2_QNAN_DP) begin
+                    INVALID <= 1'b1;
+                    OUTPUT <= {64{1'b0}};
+                end
+                else begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{63{1'b0}},LE};
+                end         
+            end        
+            `MIN : begin
+                if(INPUT_1_SNAN_DP | INPUT_2_SNAN_DP | (INPUT_1_QNAN_DP & INPUT_2_QNAN_DP)) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= `QNaN_DP;
+                end
+                else if (INPUT_1_QNAN_DP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= INPUT_2;
+                end
+                else if (INPUT_2_QNAN_DP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= INPUT_1;
+                end
+                else begin
+                    if (EQ == 1'b1) begin
+                        OUTPUT <= INPUT_1; 
+                    end
+                    else if (LT == 1'b1) begin
+                        OUTPUT <= INPUT_1;               
+                    end
+                    else begin
+                        OUTPUT <= INPUT_2;
+                    end
+                    INVALID <= 1'b0;
+                 end
+            end
+            `MAX : begin
+                if(INPUT_1_SNAN_DP | INPUT_2_SNAN_DP | (INPUT_1_QNAN_DP & INPUT_2_QNAN_DP)) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= `QNaN_DP;
+                end
+                else if (INPUT_1_QNAN_DP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= INPUT_2;
+                end
+                else if (INPUT_2_QNAN_DP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= INPUT_1;
+                end
+                else begin
+                    if (EQ == 1'b1) begin
+                        OUTPUT <= INPUT_1; 
+                    end
+                    else if (LT == 1'b1) begin
+                        OUTPUT <= INPUT_2;               
+                    end
+                    else begin
+                        OUTPUT <= INPUT_1;
+                    end
+                    INVALID <= 1'b0;
+                 end        
+            end
+            default: begin
+            
+            end
+        endcase;
     end
-end
-
-// ----------- Overflow / Underflow Detection -----------
-
-wire [1:0] EXC_BITS = SP_DP ? OUTPUT_SP[33:32] : OUTPUT_DP[65:64];
-wire       EXP_ZERO = SP_DP ? !(|OUTPUT_SP[30:23]) : !(|OUTPUT_DP[62:52]);
-
-always @(*) begin
-    INEXACT <= SP_DP ? INEXACT_SP : INEXACT_DP;
-
-    case (EXC_BITS)
-        2'b00: begin OVERFLOW <= 0; UNDERFLOW <= 1; end
-        2'b01: begin OVERFLOW <= 0; UNDERFLOW <= EXP_ZERO ? 1 : 0; end
-        2'b10: begin OVERFLOW <= 1; UNDERFLOW <= 0; end
-        default: begin OVERFLOW <= 0; UNDERFLOW <= 0; end
-    endcase
-end
-
-// ----------- Invalid Operation Detection -----------
-
-wire [1:0] IN_1_EXC_BITS = SP_DP ? INPUT_1[33:32] : INPUT_1[65:64];
-wire [1:0] IN_2_EXC_BITS = SP_DP ? INPUT_2[33:32] : INPUT_2[65:64];
-
-wire       IN_1_SNAN_BIT = SP_DP ? INPUT_1[22] : INPUT_1[51];
-wire       IN_2_SNAN_BIT = SP_DP ? INPUT_2[22] : INPUT_2[51];
-
-wire       IN_1_SIGN = SP_DP ? INPUT_1[31] : INPUT_1[63];
-wire       IN_2_SIGN = SP_DP ? INPUT_2[31] : INPUT_2[63];
-
-always @(*) begin
-    if (((IN_1_EXC_BITS == 2'b11) && (IN_1_SNAN_BIT == 1'b0)) ||
-        ((IN_2_EXC_BITS == 2'b11) && (IN_2_SNAN_BIT == 1'b0))) begin
-        INVALID <= 1;
-    end else if ((IN_1_EXC_BITS == 2'b10) && (IN_2_EXC_BITS == 2'b10)) begin
-        if (ADD_SUB)
-            INVALID <= (IN_1_SIGN == IN_2_SIGN) ? 1 : 0;
-        else
-            INVALID <= (IN_1_SIGN != IN_2_SIGN) ? 1 : 0;
-    end else begin
-        INVALID <= 0;
+    else begin
+        case(OPERATION)
+            `EQUAL : begin
+                if(INPUT_1_SNAN_SP | INPUT_2_SNAN_SP) begin
+                    INVALID <= 1'b1;
+                    OUTPUT <= {64{1'b0}};
+                end
+                else if(INPUT_1_QNAN_SP | INPUT_2_QNAN_SP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {64{1'b0}};               
+                end
+                else begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{63{1'b0}},EQ};
+                end
+            end
+            `LESS_THAN : begin
+                if(INPUT_1_SNAN_SP | INPUT_2_SNAN_SP | INPUT_1_QNAN_SP | INPUT_2_QNAN_SP) begin
+                    INVALID <= 1'b1;
+                    OUTPUT <= {64{1'b0}};
+                end
+                else begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{63{1'b0}},LT};
+                end
+            end
+            `LESS_OR_EQUAL : begin
+                if(INPUT_1_SNAN_SP | INPUT_2_SNAN_SP | INPUT_1_QNAN_SP | INPUT_2_QNAN_SP) begin
+                    INVALID <= 1'b1;
+                    OUTPUT <= {64{1'b0}};
+                end
+                else begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{63{1'b0}},LE};
+                end         
+            end        
+            `MIN : begin
+                if(INPUT_1_SNAN_SP | INPUT_2_SNAN_SP | (INPUT_1_QNAN_SP & INPUT_2_QNAN_SP)) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{32{1'b0}},`QNaN_SP};
+                end
+                else if (INPUT_1_QNAN_SP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{32{1'b0}},INPUT_2};
+                end
+                else if (INPUT_2_QNAN_SP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{32{1'b0}},INPUT_1};
+                end
+                else begin
+                    if (EQ == 1'b1) begin
+                        OUTPUT <= {{32{1'b0}},INPUT_1}; 
+                    end
+                    else if (LT == 1'b1) begin
+                        OUTPUT <= {{32{1'b0}},INPUT_1};               
+                    end
+                    else begin
+                        OUTPUT <= {{32{1'b0}},INPUT_2};
+                    end
+                    INVALID <= 1'b0;
+                 end
+            end
+            `MAX : begin
+                if(INPUT_1_SNAN_SP | INPUT_2_SNAN_SP | (INPUT_1_QNAN_SP & INPUT_2_QNAN_SP)) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{32{1'b0}},`QNaN_SP};
+                end
+                else if (INPUT_1_QNAN_SP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{32{1'b0}},INPUT_2};
+                end
+                else if (INPUT_2_QNAN_SP) begin
+                    INVALID <= 1'b0;
+                    OUTPUT <= {{32{1'b0}},INPUT_1};
+                end
+                else begin
+                    if (EQ == 1'b1) begin
+                        OUTPUT <= {{32{1'b0}},INPUT_1}; 
+                    end
+                    else if (LT == 1'b1) begin
+                        OUTPUT <= {{32{1'b0}},INPUT_2};               
+                    end
+                    else begin
+                        OUTPUT <= {{32{1'b0}},INPUT_1};
+                    end
+                    INVALID <= 1'b0;
+                 end        
+            end
+            default: begin
+            
+            end
+        endcase;
     end
 end
 
 endmodule
-
