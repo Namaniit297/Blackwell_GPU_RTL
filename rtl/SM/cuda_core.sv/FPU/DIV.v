@@ -1,14 +1,4 @@
-//******************************************************************************
-// Copyright (c) 2014 - 2018, 2019 - 2021, Indian Institute of Science, Bangalore.
-// All Rights Reserved. See LICENSE for license details.
-//------------------------------------------------------------------------------
-
-// Contributors
-// Naveen Chander V (naveenv@alum.iisc.ac.in)
-// Akshay Birari (akshay@alum.iisc.ac.in), Piyush Birla (piyush@alum.iisc.ac.in)
-// Suseela Budi (suseela@alum.iisc.ac.in), Pradeep Gupta (gupta@alum.iisc.ac.in)
-// Kavya Sharat (kavyasharat@alum.iisc.ac.in), Sumeet Bandishte (sumeet.bandishte30@gmail.com)
-// Kuruvilla Varghese (kuru@iisc.ac.in)
+//****************************************************************************** 
 `timescale 1ns / 1ps
 
 (* keep_hierarchy = "yes" *) module DIV
