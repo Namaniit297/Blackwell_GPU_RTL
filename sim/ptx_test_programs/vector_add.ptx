@@ -1,1 +1,67 @@
+.version 7.0
+.target sm_70
+.address_size 64
+
+// ==========================================
+// Vector Addition Kernel
+// C[i] = A[i] + B[i]
+// ==========================================
+
+.visible .entry vector_add(
+    .param .u64 A_ptr,
+    .param .u64 B_ptr,
+    .param .u64 C_ptr,
+    .param .u32 N
+)
+{
+    // ----------------------------
+    // Register declarations
+    // ----------------------------
+    .reg .pred   %p<2>;
+    .reg .b32    %r<8>;
+    .reg .b64    %rd<10>;
+    .reg .f32    %f<4>;
+
+    // ----------------------------
+    // Load kernel parameters
+    // ----------------------------
+    ld.param.u64 %rd1, [A_ptr];
+    ld.param.u64 %rd2, [B_ptr];
+    ld.param.u64 %rd3, [C_ptr];
+    ld.param.u32 %r1,  [N];
+
+    // ----------------------------
+    // Thread index calculation
+    // global_idx = blockIdx.x * blockDim.x + threadIdx.x
+    // ----------------------------
+    mov.u32 %r2, %ctaid.x;
+    mov.u32 %r3, %ntid.x;
+    mov.u32 %r4, %tid.x;
+
+    mad.lo.s32 %r5, %r2, %r3, %r4;
+
+    // Bounds check
+    setp.ge.u32 %p1, %r5, %r1;
+    @%p1 bra EXIT;
+
+    // ----------------------------
+    // Compute addresses
+    // ----------------------------
+    mul.wide.u32 %rd4, %r5, 4;
+
+    add.u64 %rd5, %rd1, %rd4; // A[i]
+    add.u64 %rd6, %rd2, %rd4; // B[i]
+    add.u64 %rd7, %rd3, %rd4; // C[i]
+
+    // ----------------------------
+    // Load, compute, store
+    // ----------------------------
+    ld.global.f32 %f1, [%rd5];
+    ld.global.f32 %f2, [%rd6];
+    add.f32 %f3, %f1, %f2;
+    st.global.f32 [%rd7], %f3;
+
+EXIT:
+    ret;
+}
 
