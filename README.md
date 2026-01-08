@@ -13,17 +13,6 @@ This project aims to replicate NVIDIA’s latest Blackwell GPU architecture in R
 - **Execution Controller:** FSM-driven pipeline managing instruction fetch, decode, dispatch, and retirement conforming to CUDA ISA semantics.  
 - **AXI Interconnect:** High-bandwidth AXI bus interfaces and DMA engines enable efficient off-chip DRAM access and host communication.
 
-## 📅 Development Roadmap (Deadline: June 25, 2025)
-
-- **Week 1:**  
-  Implement CUDA core pipeline including ALU, FPU, warp-aware register files, and warp scheduler with hazard logic. Perform RTL simulation and validation of pipeline correctness and warp-level execution.
-
-- **Week 2:**  
-  Develop memory subsystem with load-store units, L1 caches, shared memory, and multi-level TLBs. Design and integrate systolic array tensor cores supporting mixed-precision MMA operations. Validate memory and compute integration.
-
-- **Week 3:**  
-  Finalize AXI master interfaces and DRAM controllers to support high-throughput data transfers. Implement host interface and model loading modules enabling full AI inference execution on FPGA. Conduct comprehensive verification and benchmarking.
-
 ## 📂 Repository Structure
 
 /src
