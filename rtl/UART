@@ -1,0 +1,26 @@
+// FILE: uart_if.sv
+// Simple UART bridge for host prints (memory-mapped transmit register)
+module uart_if #(
+  parameter BAUD = 115200
+)(
+  input logic clk, rst_n,
+  input logic write_en,
+  input logic [7:0] write_byte,
+  output logic tx_busy
+);
+  // template: print via simulator $write; tx_busy toggles for a few cycles
+  logic [7:0] buf;
+  logic [7:0] timer;
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin tx_busy<=0; timer<=0; end
+    else if (write_en && !tx_busy) begin
+      buf <= write_byte;
+      tx_busy <= 1;
+      timer <= 8'd10;
+      $write("%c", write_byte); // simulation-only print
+    end else if (tx_busy) begin
+      if (timer==0) tx_busy<=0;
+      else timer <= timer - 1;
+    end
+  end
+endmodule
