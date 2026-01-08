@@ -1,1 +1,85 @@
+.version 7.0
+.target sm_70
+.address_size 64
+
+// ==========================================
+// Matrix Multiplication Kernel
+// C = A x B
+// A: M x K
+// B: K x N
+// C: M x N
+// Tile size = 16x16
+// ==========================================
+
+.visible .entry matmul(
+    .param .u64 A_ptr,
+    .param .u64 B_ptr,
+    .param .u64 C_ptr,
+    .param .u32 M,
+    .param .u32 N,
+    .param .u32 K
+)
+{
+    // ----------------------------
+    // Registers
+    // ----------------------------
+    .reg .pred   %p<4>;
+    .reg .b32    %r<20>;
+    .reg .b64    %rd<20>;
+    .reg .f32    %f<8>;
+
+    // ----------------------------
+    // Shared Memory Tiles
+    // ----------------------------
+    .shared .align 4 .f32 As[256];  // 16x16
+    .shared .align 4 .f32 Bs[256];  // 16x16
+
+    // ----------------------------
+    // Load parameters
+    // ----------------------------
+    ld.param.u64 %rd1, [A_ptr];
+    ld.param.u64 %rd2, [B_ptr];
+    ld.param.u64 %rd3, [C_ptr];
+    ld.param.u32 %r1,  [M];
+    ld.param.u32 %r2,  [N];
+    ld.param.u32 %r3,  [K];
+
+    // ----------------------------
+    // Thread indices
+    // ----------------------------
+    mov.u32 %r4, %ctaid.x; // blockIdx.x
+    mov.u32 %r5, %ctaid.y; // blockIdx.y
+    mov.u32 %r6, %tid.x;   // threadIdx.x
+    mov.u32 %r7, %tid.y;   // threadIdx.y
+
+    // ----------------------------
+    // Global row, col
+    // ----------------------------
+    mad.lo.s32 %r8, %r5, 16, %r7;  // row
+    mad.lo.s32 %r9, %r4, 16, %r6;  // col
+
+    // Accumulator
+    mov.f32 %f1, 0f00000000;
+
+    // ----------------------------
+    // Loop over K tiles
+    // ----------------------------
+    mov.u32 %r10, 0;
+
+K_LOOP:
+    setp.ge.u32 %p1, %r10, %r3;
+    @%p1 bra END_K;
+
+    // ----------------------------
+    // Load A tile
+    // ----------------------------
+    mad.lo.s32 %r11, %r8, %r3, %r10;
+    add.s32 %r11, %r11, %r6;
+
+    setp.ge.u32 %p2, %r8, %r1;
+    setp.ge.u32 %p3, %r11, %r3;
+    or.pred %p2, %p2, %p3;
+
+    mul.wide.u32 %rd4, %r11, 4;
+    add.u64 %rd5, %rd1, %rd4;
 
